@@ -4,18 +4,22 @@ version = "0.1.0"
 edition = "2021"
 description = "Geometric algebra nodes for the Graphite editor — rotors, conformal embedding, reflections, and projections using Cl(3,1) conformal geometric algebra"
 authors = ["Graphite Authors <contact@graphite.art>"]
-license = "MIT OR Apache-2.0"
+license = "MIT"
 repository = "https://github.com/SuperInstance/graphite-geometric-algebra"
+keywords = ["geometric-algebra", "clifford", "conformal", "rotor", "graphite"]
+categories = ["mathematics", "graphics", "game-development"]
 
 [dependencies]
 ga-core = { git = "https://github.com/SuperInstance/ga-core" }
-glam = { version = "0.28", features = ["f64"] }
+glam = { version = "0.33", features = ["f64"] }
 serde = { version = "1", features = ["derive"], optional = true }
 
 [features]
 default = ["serde"]
+graphite-nodes = []
 
 [dev-dependencies]
+approx = "0.5"
 
 # Notes for integrating into Graphite:
 # When dropping this crate into Graphite's node-graph/nodes/ directory,

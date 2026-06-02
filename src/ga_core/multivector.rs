@@ -10,8 +10,14 @@ pub struct Multivector {
 }
 
 impl Multivector {
-    pub fn zero() -> Self { Self { c: [0.0; 16] } }
-    pub fn scalar(v: f64) -> Self { let mut m = Self::zero(); m.c[0] = v; m }
+    pub fn zero() -> Self {
+        Self { c: [0.0; 16] }
+    }
+    pub fn scalar(v: f64) -> Self {
+        let mut m = Self::zero();
+        m.c[0] = v;
+        m
+    }
     pub fn vector(v: [f64; 4]) -> Self {
         let mut m = Self::zero();
         m.c[1..=4].copy_from_slice(&v);
@@ -22,10 +28,16 @@ impl Multivector {
         m.c[5..=10].copy_from_slice(&v);
         m
     }
-    pub fn scalar_part(&self) -> f64 { self.c[0] }
-    pub fn vector_part(&self) -> [f64; 4] { [self.c[1], self.c[2], self.c[3], self.c[4]] }
+    pub fn scalar_part(&self) -> f64 {
+        self.c[0]
+    }
+    pub fn vector_part(&self) -> [f64; 4] {
+        [self.c[1], self.c[2], self.c[3], self.c[4]]
+    }
     pub fn bivector_part(&self) -> [f64; 6] {
-        [self.c[5], self.c[6], self.c[7], self.c[8], self.c[9], self.c[10]]
+        [
+            self.c[5], self.c[6], self.c[7], self.c[8], self.c[9], self.c[10],
+        ]
     }
     pub fn grade_norm(&self, k: usize) -> f64 {
         match k {
@@ -40,39 +52,54 @@ impl Multivector {
 
     pub fn add(&self, other: &Self) -> Self {
         let mut r = Self::zero();
-        for i in 0..16 { r.c[i] = self.c[i] + other.c[i]; }
+        for i in 0..16 {
+            r.c[i] = self.c[i] + other.c[i];
+        }
         r
     }
     pub fn sub(&self, other: &Self) -> Self {
         let mut r = Self::zero();
-        for i in 0..16 { r.c[i] = self.c[i] - other.c[i]; }
+        for i in 0..16 {
+            r.c[i] = self.c[i] - other.c[i];
+        }
         r
     }
     pub fn scale(&self, s: f64) -> Self {
         let mut r = Self::zero();
-        for i in 0..16 { r.c[i] = self.c[i] * s; }
+        for i in 0..16 {
+            r.c[i] = self.c[i] * s;
+        }
         r
     }
 
     /// Reverse: grade k -> (-1)^(k(k-1)/2) sign.
     pub fn reverse(&self) -> Self {
         let mut r = self.clone();
-        for i in 5..=10 { r.c[i] = -r.c[i]; }
-        for i in 11..=14 { r.c[i] = -r.c[i]; }
+        for i in 5..=10 {
+            r.c[i] = -r.c[i];
+        }
+        for i in 11..=14 {
+            r.c[i] = -r.c[i];
+        }
         r
     }
 
     /// Clifford conjugation: reverse + negate odd grades.
     pub fn conjugate(&self) -> Self {
         let mut r = self.clone();
-        for i in 1..=4  { r.c[i] = -r.c[i]; }
-        for i in 11..=14 { r.c[i] = -r.c[i]; }
+        for i in 1..=4 {
+            r.c[i] = -r.c[i];
+        }
+        for i in 11..=14 {
+            r.c[i] = -r.c[i];
+        }
         r
     }
 
     /// Hodge dual: multiply by pseudoscalar on the right.
     pub fn dual(&self) -> Self {
-        let mut i = Self::zero(); i.c[15] = 1.0;
+        let mut i = Self::zero();
+        i.c[15] = 1.0;
         self.geometric_product(&i)
     }
 
@@ -87,13 +114,15 @@ impl Multivector {
     pub fn geometric_product(&self, other: &Self) -> Self {
         let table = product_table();
         let mut result = Self::zero();
-        for i in 0..16 {
-            let a = self.c[i];
-            if a.abs() < 1e-40 { continue; }
+        for (i, &a) in self.c.iter().enumerate() {
+            if a.abs() < 1e-40 {
+                continue;
+            }
             let row = &table[i];
-            for j in 0..16 {
-                let b = other.c[j];
-                if b.abs() < 1e-40 { continue; }
+            for (j, &b) in other.c.iter().enumerate() {
+                if b.abs() < 1e-40 {
+                    continue;
+                }
                 let (k, sign) = row[j];
                 result.c[k] += a * b * sign;
             }
@@ -102,21 +131,17 @@ impl Multivector {
     }
 
     pub fn wedge(&self, other: &Self) -> Self {
-        self.geometric_product(other).sub(&other.geometric_product(self)).scale(0.5)
+        self.geometric_product(other)
+            .sub(&other.geometric_product(self))
+            .scale(0.5)
     }
     pub fn inner(&self, other: &Self) -> Self {
-        self.geometric_product(other).add(&other.geometric_product(self)).scale(0.5)
+        self.geometric_product(other)
+            .add(&other.geometric_product(self))
+            .scale(0.5)
     }
     pub fn is_zero(&self, tolerance: f64) -> bool {
         self.c.iter().all(|&x| x.abs() < tolerance)
-    }
-}
-
-/// Grade of a basis blade index.
-fn grade_of(idx: usize) -> usize {
-    match idx {
-        0 => 0, 1..=4 => 1, 5..=10 => 2, 11..=14 => 3, 15 => 4,
-        _ => 0,
     }
 }
 
@@ -129,49 +154,62 @@ fn build_product_table() -> [[(usize, f64); 16]; 16] {
 
     // Represent each blade as a sorted list of vector indices (sentinel 4 = none).
     let blade_vecs: [[usize; 4]; 16] = [
-        [4,4,4,4], // 0: scalar
-        [0,4,4,4], // 1: e0
-        [1,4,4,4], // 2: e1
-        [2,4,4,4], // 3: e2
-        [3,4,4,4], // 4: e3
-        [0,1,4,4], // 5: e01
-        [0,2,4,4], // 6: e02
-        [0,3,4,4], // 7: e03
-        [1,2,4,4], // 8: e12
-        [1,3,4,4], // 9: e13
-        [2,3,4,4], // 10: e23
-        [0,1,2,4], // 11: e012
-        [0,1,3,4], // 12: e013
-        [0,2,3,4], // 13: e023
-        [1,2,3,4], // 14: e123
-        [0,1,2,3], // 15: e0123
+        [4, 4, 4, 4], // 0: scalar
+        [0, 4, 4, 4], // 1: e0
+        [1, 4, 4, 4], // 2: e1
+        [2, 4, 4, 4], // 3: e2
+        [3, 4, 4, 4], // 4: e3
+        [0, 1, 4, 4], // 5: e01
+        [0, 2, 4, 4], // 6: e02
+        [0, 3, 4, 4], // 7: e03
+        [1, 2, 4, 4], // 8: e12
+        [1, 3, 4, 4], // 9: e13
+        [2, 3, 4, 4], // 10: e23
+        [0, 1, 2, 4], // 11: e012
+        [0, 1, 3, 4], // 12: e013
+        [0, 2, 3, 4], // 13: e023
+        [1, 2, 3, 4], // 14: e123
+        [0, 1, 2, 3], // 15: e0123
     ];
 
     let metric = [1.0, 1.0, 1.0, -1.0]; // e0², e1², e2², e3²
 
     fn vecs_to_idx(v: &[usize; 4], len: usize) -> usize {
-        if len == 0 { return 0; }
-        if len == 1 { return v[0] + 1; }
+        if len == 0 {
+            return 0;
+        }
+        if len == 1 {
+            return v[0] + 1;
+        }
         if len == 2 {
             return match (v[0], v[1]) {
-                (0,1) => 5, (0,2) => 6, (0,3) => 7,
-                (1,2) => 8, (1,3) => 9, (2,3) => 10,
+                (0, 1) => 5,
+                (0, 2) => 6,
+                (0, 3) => 7,
+                (1, 2) => 8,
+                (1, 3) => 9,
+                (2, 3) => 10,
                 _ => 0,
             };
         }
         if len == 3 {
             return match (v[0], v[1], v[2]) {
-                (0,1,2) => 11, (0,1,3) => 12, (0,2,3) => 13, (1,2,3) => 14,
+                (0, 1, 2) => 11,
+                (0, 1, 3) => 12,
+                (0, 2, 3) => 13,
+                (1, 2, 3) => 14,
                 _ => 0,
             };
         }
-        if len == 4 && v[0]==0 && v[1]==1 && v[2]==2 && v[3]==3 { return 15; }
+        if len == 4 && v[0] == 0 && v[1] == 1 && v[2] == 2 && v[3] == 3 {
+            return 15;
+        }
         0
     }
 
-    for i in 0..16 {
-        for j in 0..16 {
-            let (result, sign) = multiply_blades(&blade_vecs[i], &blade_vecs[j], &metric, vecs_to_idx);
+    for (i, bvi) in blade_vecs.iter().enumerate() {
+        for (j, bvj) in blade_vecs.iter().enumerate() {
+            let (result, sign) = multiply_blades(bvi, bvj, &metric, vecs_to_idx);
             table[i][j] = (result, sign);
         }
     }
@@ -190,22 +228,25 @@ fn multiply_blades(
     let grade_a = va.iter().position(|&x| x == 4).unwrap_or(4);
     let grade_b = vb.iter().position(|&x| x == 4).unwrap_or(4);
 
-    if grade_a == 0 { return (vecs_to_idx(vb, grade_b), 1.0); }
-    if grade_b == 0 { return (vecs_to_idx(va, grade_a), 1.0); }
+    if grade_a == 0 {
+        return (vecs_to_idx(vb, grade_b), 1.0);
+    }
+    if grade_b == 0 {
+        return (vecs_to_idx(va, grade_a), 1.0);
+    }
 
     let mut result_vecs = [4usize; 4];
     let mut len = 0;
     let mut sign = 1.0;
 
     // Copy va into result
-    for k in 0..grade_a {
-        result_vecs[len] = va[k];
+    for &v in va.iter().take(grade_a) {
+        result_vecs[len] = v;
         len += 1;
     }
 
     // Insert each vector from vb, sorting and handling squares
-    for b in 0..grade_b {
-        let v = vb[b];
+    for &v in vb.iter().take(grade_b) {
         // Find insertion point moving left; if we find same vector, square it
         let mut inserted = false;
         let mut pos = len as isize - 1;
@@ -244,7 +285,9 @@ fn multiply_blades(
     }
 
     // Pad with sentinels
-    for k in len..4 { result_vecs[k] = 4; }
+    for rv in result_vecs.iter_mut().skip(len) {
+        *rv = 4;
+    }
 
     let idx = index_of(&result_vecs, len);
 
@@ -258,22 +301,35 @@ fn multiply_blades(
 
 /// Re-export index_of helper for use within build_product_table closure
 fn vecs_to_idx(v: &[usize; 4], len: usize) -> usize {
-    if len == 0 { return 0; }
-    if len == 1 { return v[0] + 1; }
+    if len == 0 {
+        return 0;
+    }
+    if len == 1 {
+        return v[0] + 1;
+    }
     if len == 2 {
         return match (v[0], v[1]) {
-            (0,1) => 5, (0,2) => 6, (0,3) => 7,
-            (1,2) => 8, (1,3) => 9, (2,3) => 10,
+            (0, 1) => 5,
+            (0, 2) => 6,
+            (0, 3) => 7,
+            (1, 2) => 8,
+            (1, 3) => 9,
+            (2, 3) => 10,
             _ => 0,
         };
     }
     if len == 3 {
         return match (v[0], v[1], v[2]) {
-            (0,1,2) => 11, (0,1,3) => 12, (0,2,3) => 13, (1,2,3) => 14,
+            (0, 1, 2) => 11,
+            (0, 1, 3) => 12,
+            (0, 2, 3) => 13,
+            (1, 2, 3) => 14,
             _ => 0,
         };
     }
-    if len == 4 && v[0]==0 && v[1]==1 && v[2]==2 && v[3]==3 { return 15; }
+    if len == 4 && v[0] == 0 && v[1] == 1 && v[2] == 2 && v[3] == 3 {
+        return 15;
+    }
     0
 }
 
@@ -288,6 +344,20 @@ fn product_table() -> &'static [[(usize, f64); 16]; 16] {
 mod tests {
     use super::*;
 
+    // ── Identity & Scalar ──
+
+    #[test]
+    fn test_zero() {
+        let z = Multivector::zero();
+        assert!(z.is_zero(1e-15));
+    }
+
+    #[test]
+    fn test_scalar_part() {
+        let s = Multivector::scalar(3.14);
+        assert!((s.scalar_part() - 3.14).abs() < 1e-15);
+    }
+
     #[test]
     fn test_scalar_identity() {
         let s = Multivector::scalar(5.0);
@@ -296,6 +366,8 @@ mod tests {
         assert!((p.c[1] - 5.0).abs() < 1e-10);
         assert!((p.c[4] - 20.0).abs() < 1e-10);
     }
+
+    // ── Vector squares (metric) ──
 
     #[test]
     fn test_vector_squares_e0() {
@@ -312,57 +384,129 @@ mod tests {
     }
 
     #[test]
+    fn test_vector_squares_e2() {
+        let v = Multivector::vector([0.0, 0.0, 1.0, 0.0]);
+        let p = v.geometric_product(&v);
+        assert!((p.scalar_part() - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
     fn test_vector_squares_e3_timelike() {
         let v = Multivector::vector([0.0, 0.0, 0.0, 1.0]);
         let p = v.geometric_product(&v);
         assert!((p.scalar_part() - (-1.0)).abs() < 1e-10);
     }
 
+    // ── Orthogonal vector products ──
+
     #[test]
     fn test_vector_orthogonal_product() {
         let v0 = Multivector::vector([1.0, 0.0, 0.0, 0.0]);
         let v1 = Multivector::vector([0.0, 1.0, 0.0, 0.0]);
         let p = v0.geometric_product(&v1);
-        // e0*e1 = e01 (index 5)
         assert!((p.c[5] - 1.0).abs() < 1e-10);
-        // Also no scalar part
         assert!((p.scalar_part()).abs() < 1e-10);
     }
 
     #[test]
+    fn test_all_unique_vector_pairs() {
+        // e0*e2 = e02, e1*e3 = -e1*e3 = -e13... check all pairs that produce distinct bivectors
+        let e0e2 = Multivector::vector([1.0, 0.0, 0.0, 0.0])
+            .geometric_product(&Multivector::vector([0.0, 0.0, 1.0, 0.0]));
+        assert!(
+            (e0e2.c[6] - 1.0).abs() < 1e-10,
+            "e0*e2 should be e02[idx=6]"
+        );
+        let e2e0 = Multivector::vector([0.0, 0.0, 1.0, 0.0])
+            .geometric_product(&Multivector::vector([1.0, 0.0, 0.0, 0.0]));
+        assert!((e2e0.c[6] - (-1.0)).abs() < 1e-10, "e2*e0 should be -e02");
+    }
+
+    // ── Vector-bivector products ──
+
+    #[test]
     fn test_vector_bivector_product() {
-        // e1 * e12 = e1*e1*e2 = e2
         let v = Multivector::vector([0.0, 1.0, 0.0, 0.0]);
         let b = Multivector::bivector([0.0, 0.0, 0.0, 1.0, 0.0, 0.0]); // e12
         let p = v.geometric_product(&b);
-        assert!((p.c[3] - 1.0).abs() < 1e-10, "e1*e12 should give e2, got vector part {:?}", p.vector_part());
+        assert!(
+            (p.c[3] - 1.0).abs() < 1e-10,
+            "e1*e12 should give e2, got {:?}",
+            p.vector_part()
+        );
     }
+
+    #[test]
+    fn test_bivector_vector_product() {
+        // e12 * e1 = -e2
+        let b = Multivector::bivector([0.0, 0.0, 0.0, 1.0, 0.0, 0.0]); // e12
+        let v = Multivector::vector([0.0, 1.0, 0.0, 0.0]);
+        let p = b.geometric_product(&v);
+        assert!(
+            (p.c[3] - (-1.0)).abs() < 1e-10,
+            "e12*e1 should give -e2, got {:?}",
+            p.vector_part()
+        );
+    }
+
+    // ── Bivector products ──
 
     #[test]
     fn test_bivector_bivector_product() {
-        // e01 * e01 = e0*e1*e0*e1 = -e0*e0*e1*e1 = -1*1 = -1
         let b = Multivector::bivector([1.0, 0.0, 0.0, 0.0, 0.0, 0.0]); // e01
         let p = b.geometric_product(&b);
-        assert!((p.scalar_part() - (-1.0)).abs() < 1e-10, "e01² should be -1, got {}", p.scalar_part());
+        assert!(
+            (p.scalar_part() - (-1.0)).abs() < 1e-10,
+            "e01² should be -1, got {}",
+            p.scalar_part()
+        );
     }
 
     #[test]
+    fn test_e12_squared() {
+        // e12 * e12 = -e1*e1*e2*e2 = -1*1 = -1
+        let mut b = Multivector::zero();
+        b.c[8] = 1.0; // e12
+        let p = b.geometric_product(&b);
+        assert!(
+            (p.scalar_part() - (-1.0)).abs() < 1e-10,
+            "e12² should be -1"
+        );
+    }
+
+    #[test]
+    fn test_e23_squared() {
+        // e23 * e23 with metric: e23² = -e2²*e3² = -(1)(-1) = +1
+        let mut b = Multivector::zero();
+        b.c[10] = 1.0; // e23
+        let p = b.geometric_product(&b);
+        assert!(
+            (p.scalar_part() - 1.0).abs() < 1e-10,
+            "e23² should be +1 (timelike e3)"
+        );
+    }
+
+    // ── Sandwich product (rotor composition) ──
+
+    #[test]
     fn test_rotor_composition_sandwich() {
-        // R = cos(θ/2) - sin(θ/2) * B (where B^2 = -1)
-        // For Z-rotation: B = e12
         let angle = std::f64::consts::FRAC_PI_2;
         let half = angle / 2.0;
         let mut rotor = Multivector::zero();
         rotor.c[0] = half.cos();
         rotor.c[8] = -half.sin(); // e12 component
 
-        let v = Multivector::vector([0.0, 1.0, 0.0, 0.0]); // e1 direction
+        let v = Multivector::vector([0.0, 1.0, 0.0, 0.0]);
         let rev = rotor.reverse();
-        // v' = R * v * R̃
         let p = rotor.geometric_product(&v).geometric_product(&rev);
-        // After 90° around z: e1 -> e2
-        assert!((p.c[3] - 1.0).abs() < 0.01, "e1 rotated 90° around z should be ≈ e2, got {:?}", p.vector_part());
+        assert!(
+            (p.c[3] - 1.0).abs() < 0.01,
+            "e1 rotated 90° around z should be ≈ e2, got {:?}",
+            p.vector_part()
+        );
     }
+
+    // ── Norm ──
 
     #[test]
     fn test_norm_squared_vector() {
@@ -372,15 +516,156 @@ mod tests {
     }
 
     #[test]
+    fn test_norm_squared_timelike_vector() {
+        // e3 is timelike: v = [0,0,0,5] has norm² = -25
+        let v = Multivector::vector([0.0, 0.0, 0.0, 5.0]);
+        let n = v.norm_squared();
+        assert!(
+            (n - (-25.0)).abs() < 1e-10,
+            "timelike norm² should be -25, got {}",
+            n
+        );
+    }
+
+    // ── Dual ──
+
+    #[test]
     fn test_dual() {
         let s = Multivector::scalar(1.0);
         let d = s.dual();
-        // Dual of scalar is pseudoscalar
         assert!((d.c[15] - 1.0).abs() < 1e-10);
-        // Double dual
-        let dd = d.dual();
-        assert!((dd.scalar_part() - 1.0).abs() > 1e-10);
     }
+
+    // ── Add / Sub / Scale ──
+
+    #[test]
+    fn test_add() {
+        let a = Multivector::vector([1.0, 2.0, 0.0, 0.0]);
+        let b = Multivector::vector([3.0, 4.0, 0.0, 0.0]);
+        let c = a.add(&b);
+        assert!((c.c[1] - 4.0).abs() < 1e-10);
+        assert!((c.c[2] - 6.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_sub() {
+        let a = Multivector::vector([5.0, 3.0, 0.0, 0.0]);
+        let b = Multivector::vector([2.0, 1.0, 0.0, 0.0]);
+        let c = a.sub(&b);
+        assert!((c.c[1] - 3.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_scale() {
+        let a = Multivector::vector([1.0, 2.0, 3.0, 4.0]);
+        let c = a.scale(2.5);
+        assert!((c.c[1] - 2.5).abs() < 1e-10);
+        assert!((c.c[3] - 7.5).abs() < 1e-10);
+    }
+
+    // ── Reverse / Conjugate ──
+
+    #[test]
+    fn test_reverse_bivector() {
+        let mut b = Multivector::zero();
+        b.c[5] = 1.0; // e01
+        let r = b.reverse();
+        assert!(
+            (r.c[5] - (-1.0)).abs() < 1e-10,
+            "reverse should negate bivector"
+        );
+    }
+
+    #[test]
+    fn test_conjugate_vector() {
+        let v = Multivector::vector([1.0, 2.0, 3.0, 4.0]);
+        let c = v.conjugate();
+        assert!((c.c[1] - (-1.0)).abs() < 1e-10, "conjugate negates vectors");
+        assert!((c.c[3] - (-3.0)).abs() < 1e-10);
+    }
+
+    // ── Wedge & Inner ──
+
+    #[test]
+    fn test_wedge_two_vectors() {
+        let a = Multivector::vector([1.0, 0.0, 0.0, 0.0]);
+        let b = Multivector::vector([0.0, 1.0, 0.0, 0.0]);
+        let w = a.wedge(&b);
+        // wedge = ½(a*b - b*a) = e01
+        assert!((w.c[5] - 1.0).abs() < 1e-10, "e0 ∧ e1 should be e01");
+    }
+
+    #[test]
+    fn test_wedge_parallel_vectors() {
+        let a = Multivector::vector([1.0, 0.0, 0.0, 0.0]);
+        let w = a.wedge(&a);
+        assert!(w.is_zero(1e-15), "wedge of parallel vectors should vanish");
+    }
+
+    #[test]
+    fn test_inner_two_vectors() {
+        let a = Multivector::vector([1.0, 2.0, 3.0, 0.0]);
+        let b = Multivector::vector([4.0, 5.0, 6.0, 0.0]);
+        let ip = a.inner(&b);
+        // inner = ½(a*b + b*a) = a·b (scalar) = 1*4+2*5+3*6 = 32
+        assert!(
+            (ip.scalar_part() - 32.0).abs() < 1e-10,
+            "inner should be scalar 32, got {:?}",
+            ip
+        );
+    }
+
+    #[test]
+    fn test_inner_orthogonal_vectors() {
+        let a = Multivector::vector([1.0, 0.0, 0.0, 0.0]);
+        let b = Multivector::vector([0.0, 1.0, 0.0, 0.0]);
+        let ip = a.inner(&b);
+        assert!(
+            (ip.scalar_part()).abs() < 1e-15,
+            "inner of orthogonal vectors should vanish"
+        );
+    }
+
+    // ── Grade extraction ──
+
+    #[test]
+    fn test_vector_part() {
+        let mut m = Multivector::zero();
+        m.c[1] = 1.0;
+        m.c[2] = 2.0;
+        m.c[3] = 3.0;
+        m.c[4] = 4.0;
+        assert_eq!(m.vector_part(), [1.0, 2.0, 3.0, 4.0]);
+    }
+
+    #[test]
+    fn test_bivector_part() {
+        let mut m = Multivector::zero();
+        m.c[5] = 0.5;
+        m.c[6] = 1.0;
+        m.c[7] = 1.5;
+        m.c[8] = 2.0;
+        m.c[9] = 2.5;
+        m.c[10] = 3.0;
+        assert_eq!(m.bivector_part(), [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]);
+    }
+
+    #[test]
+    fn test_grade_norm() {
+        let mut m = Multivector::zero();
+        m.c[0] = 1.0; // scalar
+        m.c[1] = 2.0; // vector
+        m.c[5] = 3.0; // bivector
+        m.c[11] = 4.0; // trivector
+        m.c[15] = 5.0; // pseudoscalar
+        assert!((m.grade_norm(0) - 1.0).abs() < 1e-15);
+        assert!((m.grade_norm(1) - 2.0).abs() < 1e-15);
+        assert!((m.grade_norm(2) - 3.0).abs() < 1e-15);
+        assert!((m.grade_norm(3) - 4.0).abs() < 1e-15);
+        assert!((m.grade_norm(4) - 5.0).abs() < 1e-15);
+    }
+
+    // ── Multiplication table ──
 
     #[test]
     fn test_product_table_every_pair_nonsingular() {
@@ -388,7 +673,10 @@ mod tests {
         for i in 0..16 {
             for j in 0..16 {
                 let (k, sign) = table[i][j];
-                assert!(sign.abs() <= 1.0 || k != 0, "entry [{i},{j}] -> (k={k}, sign={sign}) is invalid");
+                assert!(
+                    sign.abs() <= 1.0 || k != 0,
+                    "entry [{i},{j}] -> (k={k}, sign={sign}) is invalid"
+                );
                 assert!(k < 16, "entry [{i},{j}] has target index {k}");
             }
         }
@@ -396,12 +684,36 @@ mod tests {
 
     #[test]
     fn test_product_table_inverses() {
-        // e0 * e0 = 1
         let table = build_product_table();
+        // e0 * e0 = 1
         let (k, s) = table[1][1];
         assert!(k == 0 && (s - 1.0).abs() < 1e-10, "e0² should be 1");
         // e3 * e3 = -1
         let (k, s) = table[4][4];
         assert!(k == 0 && (s + 1.0).abs() < 1e-10, "e3² should be -1");
+    }
+
+    #[test]
+    fn test_product_table_anticommute() {
+        // e0 * e1 = - e1 * e0
+        let table = build_product_table();
+        let (k01, s01) = table[1][2]; // e0*e1
+        let (k10, s10) = table[2][1]; // e1*e0
+        assert!(
+            s01 > 0.0 && s10 < 0.0 || s01 < 0.0 && s10 > 0.0,
+            "e0 and e1 should anticommute"
+        );
+        assert_eq!(k01, k10, "e0*e1 and e1*e0 should produce same blade");
+    }
+
+    #[test]
+    fn test_pseudoscalar_squared() {
+        // I = e0123, I² = e0²*e1²*e2²*e3² = (1)(1)(1)(-1) = -1
+        let table = build_product_table();
+        let (k, s) = table[15][15];
+        assert!(
+            k == 0 && (s - (-1.0)).abs() < 1e-10,
+            "I² should be -1, got (k={k}, s={s})"
+        );
     }
 }

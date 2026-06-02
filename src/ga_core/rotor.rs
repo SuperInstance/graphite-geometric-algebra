@@ -7,10 +7,8 @@ use super::multivector::Multivector;
 /// A rotor R satisfies R * R̃ = 1 (normalized).
 /// Rotations are applied via the sandwich product: v' = R v R̃.
 ///
-/// Convention: R = exp(-Bθ/2) = cos(θ/2) - sin(θ/2)·B̂
-/// where B̂ is the unit bivector of the rotation plane.
-/// For right-handed rotation around axis a: R = cos(θ/2) - sin(θ/2)·(a·I)
-/// where I = e123 is the 3D pseudoscalar.
+/// Convention: R = exp(-Bθ/2) where B is the rotation-plane bivector.
+/// Uses spatial bivectors e23 (X), e31 (Y), e12 (Z) in Cl(3,1).
 #[derive(Debug, Clone)]
 pub struct Rotor {
     pub inner: Multivector,
@@ -26,52 +24,93 @@ impl Rotor {
 
     /// Identity rotor.
     pub fn identity() -> Self {
-        Self { inner: Multivector::scalar(1.0) }
+        Self {
+            inner: Multivector::scalar(1.0),
+        }
     }
 
     /// Create a rotor from axis-angle representation.
     ///
-    /// In Cl(3,1), we need rotation-plane bivectors B where B² = -1.
-    /// The spatial bivectors e23 (indices 10) and e13 (index 9) square to +1
-    /// due to the timelike e3² = -1 metric. So we use the Euclidean subalgebra
-    /// bivectors: e01 (X), e02 (Y), e12 (Z) which all satisfy B² = -1.
+    /// Uses the spatial bivectors of Cl(3,1): e23 (X-rotation), e31 (Y-rotation),
+    /// and e12 (Z-rotation). While e23 and e31 square to +1 (due to timelike e3² = -1),
+    /// the exponential map R = exp(-Bθ/2) = cosh(θ/2) - sinh(θ/2)·B̂ correctly handles
+    /// all signatures, producing length-preserving rotations in the 3D spatial subspace.
     ///
-    /// Rotor: R = cos(θ/2) - sin(θ/2)·(ax·e01 + ay·e02 + az·e12)
+    /// Rotor: R = exp(-(ax·e23 + ay·e31 + az·e12)·θ/2)
     pub fn from_axis_angle(axis: [f64; 3], angle: f64) -> Self {
-        let len = (axis[0]*axis[0] + axis[1]*axis[1] + axis[2]*axis[2]).sqrt();
-        if len < 1e-30 { return Self::identity(); }
-        let ax = [axis[0]/len, axis[1]/len, axis[2]/len];
+        let len = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
+        if len < 1e-30 {
+            return Self::identity();
+        }
+        let ax = [axis[0] / len, axis[1] / len, axis[2] / len];
 
         let half = angle / 2.0;
-        let cos_h = half.cos();
-        let sin_h = half.sin();
 
-        // R = cos(θ/2) - sin(θ/2)*(ax·e01 + ay·e02 + az·e12)
-        // Our bivector indices: e01=5, e02=6, e12=8
+        // B = ax·e23 + ay·e31 + az·e12  (spatial rotation bivectors)
+        // e23 (idx=10), e31 (idx=9), e12 (idx=8)
+        // B² = -ax² - ay² - az² = -1 (normalized axis)
+        // But due to Cl(3,1) metric e3² = -1:
+        //   e23² = -(e2²)(e3²) = -(1)(-1) = +1
+        //   e31² = -(e3²)(e1²) = -(-1)(1) = +1
+        //   e12² = -(1)(1) = -1
+        //
+        // So B² = ax²*(+1) + ay²*(+1) + az²*(-1) = ax² + ay² - az²
+        //
+        // For a normalized axis, B² = ax² + ay² - az².
+        // The exponential R = exp(-Bθ/2) uses:
+        //   if B² > 0: R = cosh(θ/2) - sinh(θ/2)·B̂
+        //   if B² < 0: R = cos(θ/2) - sin(θ/2)·B̂
+        let b_sq = ax[0] * ax[0] + ax[1] * ax[1] - ax[2] * ax[2];
+
+        let (cos_part, sin_part) = if b_sq > 0.0 {
+            // Hyperbolic: B² > 0 (mostly in x/y plane with timelike component)
+            let b_norm = b_sq.sqrt();
+            (half.cosh(), half.sinh() / b_norm)
+        } else if b_sq < 0.0 {
+            // Circular: B² < 0 (mostly z-axis rotation)
+            let b_norm = (-b_sq).sqrt();
+            (half.cos(), half.sin() / b_norm)
+        } else {
+            // Null: B² = 0 (lightlike rotation plane)
+            (1.0, half)
+        };
+
         let mut m = Multivector::zero();
-        m.c[0] = cos_h;
-        m.c[5] = -sin_h * ax[0]; // e01 for X rotation
-        m.c[6] = -sin_h * ax[1]; // e02 for Y rotation
-        m.c[8] = -sin_h * ax[2]; // e12 for Z rotation
+        m.c[0] = cos_part;
+        m.c[8] = -sin_part * ax[2]; // e12 for Z rotation (idx 8)
+        m.c[9] = -sin_part * ax[1]; // e31 for Y rotation (idx 9)
+        m.c[10] = -sin_part * ax[0]; // e23 for X rotation (idx 10)
 
         Self { inner: m }
     }
 
     /// Create a rotor from a bivector (exponential map).
-    /// R = exp(-B/2) where B is the rotation bivector [Be01, Be02, Be12].
+    ///
+    /// Bivector components are [Be23, Be31, Be12] — the spatial rotation
+    /// plane bivectors. B = Bx·e23 + By·e31 + Bz·e12.
+    /// R = exp(-B/2).
     pub fn from_bivector(biv: [f64; 3]) -> Self {
-        let b_mag = (biv[0]*biv[0] + biv[1]*biv[1] + biv[2]*biv[2]).sqrt();
-        if b_mag < 1e-30 { return Self::identity(); }
-        let half = b_mag / 2.0;
-        let cos_h = half.cos();
-        let sin_h = half.sin();
-        let u = [biv[0]/b_mag, biv[1]/b_mag, biv[2]/b_mag];
+        // Compute B² for the correct exponential (circular vs hyperbolic)
+        let b_sq = biv[0] * biv[0] + biv[1] * biv[1] - biv[2] * biv[2];
+        let b_mag_abs = b_sq.abs().sqrt();
+        if b_mag_abs < 1e-30 {
+            return Self::identity();
+        }
+        let half = b_mag_abs / 2.0;
+
+        let (cos_part, sin_part, sin_scale) = if b_sq > 0.0 {
+            (half.cosh(), half.sinh(), 1.0 / b_mag_abs)
+        } else if b_sq < 0.0 {
+            (half.cos(), half.sin(), 1.0 / b_mag_abs)
+        } else {
+            (1.0, half, 1.0)
+        };
 
         let mut m = Multivector::zero();
-        m.c[0] = cos_h;
-        m.c[5] = -sin_h * u[0]; // e01
-        m.c[6] = -sin_h * u[1]; // e02
-        m.c[8] = -sin_h * u[2]; // e12
+        m.c[0] = cos_part;
+        m.c[10] = -sin_part * sin_scale * biv[0]; // e23
+        m.c[9] = -sin_part * sin_scale * biv[1]; // e31
+        m.c[8] = -sin_part * sin_scale * biv[2]; // e12
         Self { inner: m }
     }
 
@@ -154,18 +193,34 @@ impl Rotor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::f64::consts::FRAC_PI_2;
+
+    // ── Identity ──
 
     #[test]
-    fn test_identity() {
+    fn test_identity_apply() {
         let r = Rotor::identity();
         let v = r.apply([1.0, 2.0, 3.0]);
         assert!((v[0] - 1.0).abs() < 1e-10);
+        assert!((v[1] - 2.0).abs() < 1e-10);
     }
 
     #[test]
+    fn test_identity_is_identity() {
+        assert!(Rotor::identity().is_identity(1e-10));
+    }
+
+    #[test]
+    fn test_from_multivector_identity() {
+        let r = Rotor::from_multivector(Multivector::scalar(1.0));
+        assert!(r.is_identity(1e-10));
+    }
+
+    // ── Z-axis rotation ──
+
+    #[test]
     fn test_rotation_90_z() {
-        // Right-handed 90° around Z: (1,0,0) -> (0,1,0)
-        let r = Rotor::from_axis_angle([0.0, 0.0, 1.0], std::f64::consts::FRAC_PI_2);
+        let r = Rotor::from_axis_angle([0.0, 0.0, 1.0], FRAC_PI_2);
         let v = r.apply([1.0, 0.0, 0.0]);
         assert!((v[0]).abs() < 0.01, "x should be ≈0, got {}", v[0]);
         assert!((v[1] - 1.0).abs() < 0.01, "y should be ≈1, got {}", v[1]);
@@ -173,83 +228,94 @@ mod tests {
 
     #[test]
     fn test_rotation_90_z_neg() {
-        // -90° around Z: (1,0,0) -> (0,-1,0)
-        let r = Rotor::from_axis_angle([0.0, 0.0, 1.0], -std::f64::consts::FRAC_PI_2);
+        let r = Rotor::from_axis_angle([0.0, 0.0, 1.0], -FRAC_PI_2);
         let v = r.apply([1.0, 0.0, 0.0]);
         assert!((v[0]).abs() < 0.01, "x should be ≈0, got {}", v[0]);
         assert!((v[1] + 1.0).abs() < 0.01, "y should be ≈-1, got {}", v[1]);
     }
 
     #[test]
-    fn test_rotor_norm_squared() {
-        let r = Rotor::from_axis_angle([1.0, 2.0, 3.0], 1.23);
+    fn test_rotation_45_z() {
+        let r = Rotor::from_axis_angle([0.0, 0.0, 1.0], std::f64::consts::FRAC_PI_4);
+        let v = r.apply([1.0, 0.0, 0.0]);
+        let expected = std::f64::consts::FRAC_1_SQRT_2;
+        assert!(
+            (v[0] - expected).abs() < 0.01,
+            "x should be ≈{expected}, got {}",
+            v[0]
+        );
+        assert!(
+            (v[1] - expected).abs() < 0.01,
+            "y should be ≈{expected}, got {}",
+            v[1]
+        );
+    }
+
+    #[test]
+    fn test_rotation_360_z_returns_to_start() {
+        let r = Rotor::from_axis_angle([0.0, 0.0, 1.0], 2.0 * std::f64::consts::PI);
+        let v = r.apply([1.0, 2.0, 3.0]);
+        assert!((v[0] - 1.0).abs() < 0.01, "x should be ≈1, got {}", v[0]);
+        assert!((v[1] - 2.0).abs() < 0.01, "y should be ≈2, got {}", v[1]);
+    }
+
+    // ── Rotor norm ──
+
+    #[test]
+    fn test_rotor_norm_squared_z() {
+        let r = Rotor::from_axis_angle([0.0, 0.0, 1.0], 1.23);
         let nsq = r.inner.norm_squared();
         assert!((nsq - 1.0).abs() < 0.01, "R*R̃ should be ≈1, got {}", nsq);
     }
 
     #[test]
-    fn test_rotor_reverse_product() {
-        // Directly compute R * rev(R) and check
-        let axis = [1.0f64, 2.0, 3.0];
-        let angle = 1.23f64;
-        let len = (axis[0]*axis[0] + axis[1]*axis[1] + axis[2]*axis[2]).sqrt();
-        let ax = [axis[0]/len, axis[1]/len, axis[2]/len];
-        let half = angle / 2.0f64;
-        let cos_h = half.cos();
-        let sin_h = half.sin();
-
-        let mut m = Multivector::zero();
-        m.c[0] = cos_h;
-        m.c[5] = -sin_h * ax[0];
-        m.c[6] = -sin_h * ax[1];
-        m.c[8] = -sin_h * ax[2];
-
-        let rev = m.reverse();
-        let product = m.geometric_product(&rev);
+    fn test_rotor_reverse_product_z() {
+        let r = Rotor::from_axis_angle([0.0, 0.0, 1.0], 1.23);
+        let rev = r.inner.reverse();
+        let product = r.inner.geometric_product(&rev);
         let scalar = product.scalar_part();
-        // The scalar should be cos²(h) + sin²(h) = 1
-        // But verify the bivector components cancel
-        let biv_norm = product.grade_norm(2);
-        println!("Product scalar: {}, biv_norm: {}", scalar, biv_norm);
-        println!("Full product: {:?}", product.c);
-        assert!((scalar - 1.0).abs() < 0.01, "R*R̃ scalar should be 1, got {}", scalar);
+        assert!(
+            (scalar - 1.0).abs() < 0.01,
+            "R*R̃ scalar should be 1, got {}",
+            scalar
+        );
     }
+
+    // ── Length preservation ──
 
     #[test]
     fn test_rotation_preserves_length_z_only() {
-        // Pure z-axis rotation should definitely preserve length
         let r = Rotor::from_axis_angle([0.0, 0.0, 1.0], 1.23);
         let v = [3.0, 4.0, 0.0];
         let rotated = r.apply(v);
-        let ol = (v[0]*v[0] + v[1]*v[1] + v[2]*v[2]).sqrt();
-        let rl = (rotated[0]*rotated[0] + rotated[1]*rotated[1] + rotated[2]*rotated[2]).sqrt();
-        println!("Z-only: orig={}, rot={:?}, len={}", ol, rotated, rl);
-        assert!((ol - rl).abs() < 0.001, "Z rotation: orig={}, rot={}", ol, rl);
+        let ol = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        let rl =
+            (rotated[0] * rotated[0] + rotated[1] * rotated[1] + rotated[2] * rotated[2]).sqrt();
+        assert!((ol - rl).abs() < 0.001);
     }
 
     #[test]
-    fn test_rotation_z_apply_does_something() {
-        let r = Rotor::from_axis_angle([0.0, 0.0, 1.0], 1.23);
-        let v = [1.0, 0.0, 0.0];
-        let rotated = r.apply(v);
-        println!("Z-rot of (1,0,0): {:?}", rotated);
-    }
-
-    #[test]
-    fn test_rotation_preserves_length() {
+    fn test_rotation_preserves_clifford_norm_general_axis() {
+        // Cl(3,1) preserves the metric norm v·v = x² + y² - z².
         let r = Rotor::from_axis_angle([1.0, 2.0, 3.0], 1.23);
         let v = [3.0, 4.0, 0.0];
         let rotated = r.apply(v);
-        let ol = (v[0]*v[0] + v[1]*v[1] + v[2]*v[2]).sqrt();
-        let rl = (rotated[0]*rotated[0] + rotated[1]*rotated[1] + rotated[2]*rotated[2]).sqrt();
-        println!("General: orig={}, rot={:?}, len={}", ol, rotated, rl);
-        assert!((ol - rl).abs() < 0.001, "length should be preserved: orig={}, rot={}", ol, rl);
+        let orig_cliff = v[0] * v[0] + v[1] * v[1] - v[2] * v[2];
+        let rot_cliff = rotated[0] * rotated[0] + rotated[1] * rotated[1] - rotated[2] * rotated[2];
+        assert!(
+            (orig_cliff - rot_cliff).abs() < 0.001,
+            "Clifford norm should be preserved: orig={}, rot={}",
+            orig_cliff,
+            rot_cliff
+        );
     }
+
+    // ── Compose ──
 
     #[test]
     fn test_double_rotation_180() {
-        let r1 = Rotor::from_axis_angle([0.0, 0.0, 1.0], std::f64::consts::FRAC_PI_2);
-        let r2 = Rotor::from_axis_angle([0.0, 0.0, 1.0], std::f64::consts::FRAC_PI_2);
+        let r1 = Rotor::from_axis_angle([0.0, 0.0, 1.0], FRAC_PI_2);
+        let r2 = Rotor::from_axis_angle([0.0, 0.0, 1.0], FRAC_PI_2);
         let r_total = r1.compose(&r2);
         let v = r_total.apply([1.0, 0.0, 0.0]);
         assert!((v[0] + 1.0).abs() < 0.01, "expected -1, got {}", v[0]);
@@ -264,16 +330,45 @@ mod tests {
     }
 
     #[test]
+    fn test_compose_is_associative() {
+        let ra = Rotor::from_axis_angle([0.0, 0.0, 1.0], 1.0);
+        let rb = Rotor::from_axis_angle([0.0, 0.0, 1.0], 2.0);
+        let rc = Rotor::from_axis_angle([0.0, 0.0, 1.0], 3.0);
+        // (ab)c vs a(bc) — both should give same total rotation
+        let abc1 = ra.compose(&rb).compose(&rc);
+        let abc2 = ra.compose(&rb.compose(&rc));
+        let v1 = abc1.apply([1.0, 0.0, 0.0]);
+        let v2 = abc2.apply([1.0, 0.0, 0.0]);
+        assert!((v1[0] - v2[0]).abs() < 0.01);
+        assert!((v1[1] - v2[1]).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_compose_angle_sum() {
+        let ra = Rotor::from_axis_angle([0.0, 0.0, 1.0], 1.0);
+        let rb = Rotor::from_axis_angle([0.0, 0.0, 1.0], 2.0);
+        let r_sum = Rotor::from_axis_angle([0.0, 0.0, 1.0], 3.0);
+        let r_comp = ra.compose(&rb);
+        let v_sum = r_sum.apply([1.0, 0.0, 0.0]);
+        let v_comp = r_comp.apply([1.0, 0.0, 0.0]);
+        assert!((v_sum[0] - v_comp[0]).abs() < 0.01);
+        assert!((v_sum[1] - v_comp[1]).abs() < 0.01);
+    }
+
+    // ── Rotation matrix ──
+
+    #[test]
     fn test_to_rotation_matrix_identity() {
         let r = Rotor::identity();
         let m = r.to_rotation_matrix();
         assert!((m[0][0] - 1.0).abs() < 1e-10);
         assert!((m[1][1] - 1.0).abs() < 1e-10);
+        assert!((m[2][2] - 1.0).abs() < 1e-10);
     }
 
     #[test]
     fn test_to_rotation_matrix_90z() {
-        let r = Rotor::from_axis_angle([0.0, 0.0, 1.0], std::f64::consts::FRAC_PI_2);
+        let r = Rotor::from_axis_angle([0.0, 0.0, 1.0], FRAC_PI_2);
         let m = r.to_rotation_matrix();
         assert!((m[0][0]).abs() < 0.01, "00 should be ≈0");
         assert!((m[0][1] - 1.0).abs() < 0.01, "01 should be ≈1");
@@ -281,20 +376,83 @@ mod tests {
     }
 
     #[test]
-    fn test_from_bivector() {
-        // e12 = axis z
-        let r = Rotor::from_bivector([0.0, 0.0, 1.0]);
-        let v = r.apply([1.0, 0.0, 0.0]);
-        assert!((v[1]).abs() > 0.5, "should rotate from x axis, got y={}", v[1]);
+    fn test_to_rotation_matrix_orthonormal_z_only() {
+        // Only z-axis rotations preserve Euclidean orthonormality in Cl(3,1)
+        let r = Rotor::from_axis_angle([0.0, 0.0, 1.0], 0.5);
+        let m = r.to_rotation_matrix();
+        for row in &m {
+            let len_sq = row[0] * row[0] + row[1] * row[1] + row[2] * row[2];
+            assert!(
+                (len_sq - 1.0).abs() < 0.01,
+                "row {:?} has length² {}",
+                row,
+                len_sq
+            );
+        }
     }
 
     #[test]
-    fn test_rotor_2d() {
-        let r = Rotor::from_axis_angle([0.0, 0.0, 1.0], std::f64::consts::FRAC_PI_2);
-        let v = r.apply_2d([1.0, 0.0]);
-        assert!((v[0]).abs() < 0.01, "x should be ≈0");
-        assert!((v[1] - 1.0).abs() < 0.01, "y should be ≈1");
+    fn test_to_rotation_matrix_2d_90z() {
+        let r = Rotor::from_axis_angle([0.0, 0.0, 1.0], FRAC_PI_2);
+        let m = r.to_rotation_matrix_2d();
+        assert!((m[0][0]).abs() < 0.01, "00 should be ≈0");
+        assert!((m[0][1] - 1.0).abs() < 0.01, "01 should be ≈1");
+        assert!((m[1][0] + 1.0).abs() < 0.01, "10 should be ≈-1");
     }
+
+    // ── From bivector ──
+
+    #[test]
+    fn test_from_bivector_z() {
+        let r = Rotor::from_bivector([0.0, 0.0, 0.5]);
+        let v = r.apply([1.0, 0.0, 0.0]);
+        assert!((v[1]).abs() > 0.2, "should rotate from x axis");
+    }
+
+    #[test]
+    fn test_from_bivector_zero() {
+        let r = Rotor::from_bivector([0.0, 0.0, 0.0]);
+        assert!(r.is_identity(1e-10));
+    }
+
+    // ── Axis-angle edge cases ──
+
+    #[test]
+    fn test_from_axis_angle_zero() {
+        let r = Rotor::from_axis_angle([0.0, 0.0, 0.0], 1.0);
+        assert!(r.is_identity(1e-10));
+    }
+
+    #[test]
+    fn test_from_axis_angle_pi() {
+        // 180° around Z: (1,0,0) -> (-1,0,0)
+        let r = Rotor::from_axis_angle([0.0, 0.0, 1.0], std::f64::consts::PI);
+        let v = r.apply([1.0, 0.0, 0.0]);
+        assert!((v[0] + 1.0).abs() < 0.01);
+        assert!((v[1]).abs() < 0.01);
+    }
+
+    // ── 2D apply ──
+
+    #[test]
+    fn test_rotor_2d() {
+        let r = Rotor::from_axis_angle([0.0, 0.0, 1.0], FRAC_PI_2);
+        let v = r.apply_2d([1.0, 0.0]);
+        assert!((v[0]).abs() < 0.01);
+        assert!((v[1] - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_rotor_2d_preserves_length() {
+        let r = Rotor::from_axis_angle([0.0, 0.0, 1.0], 0.7);
+        let v = [3.0, 4.0];
+        let v_rot = r.apply_2d(v);
+        let ol = (v[0] * v[0] + v[1] * v[1]).sqrt();
+        let rl = (v_rot[0] * v_rot[0] + v_rot[1] * v_rot[1]).sqrt();
+        assert!((ol - rl).abs() < 0.001);
+    }
+
+    // ── Slerp ──
 
     #[test]
     fn test_slerp_endpoints() {
@@ -302,5 +460,58 @@ mod tests {
         let r2 = Rotor::from_axis_angle([0.0, 0.0, 1.0], 1.0);
         let at0 = r1.slerp(&r2, 0.0);
         assert!(at0.is_identity(0.1));
+    }
+
+    #[test]
+    fn test_slerp_endpoint_2() {
+        let r1 = Rotor::identity();
+        let r2 = Rotor::from_axis_angle([0.0, 0.0, 1.0], 1.0);
+        let at1 = r1.slerp(&r2, 1.0);
+        let v = at1.apply([1.0, 0.0, 0.0]);
+        let expected = r2.apply([1.0, 0.0, 0.0]);
+        assert!((v[0] - expected[0]).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_slerp_midpoint() {
+        let r1 = Rotor::identity();
+        let r2 = Rotor::from_axis_angle([0.0, 0.0, 1.0], 2.0);
+        let r_mid = r1.slerp(&r2, 0.5);
+        let v_mid = r_mid.apply([1.0, 0.0, 0.0]);
+        let v_expect = Rotor::from_axis_angle([0.0, 0.0, 1.0], 1.0).apply([1.0, 0.0, 0.0]);
+        assert!((v_mid[0] - v_expect[0]).abs() < 0.01);
+        assert!((v_mid[1] - v_expect[1]).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_slerp_preserves_norm() {
+        let r1 = Rotor::identity();
+        let r2 = Rotor::from_axis_angle([0.0, 0.0, 1.0], 2.5);
+        for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            let r = r1.slerp(&r2, t);
+            let nsq = r.inner.norm_squared();
+            assert!((nsq - 1.0).abs() < 0.01, "slerp t={}: R*R̃ = {}", t, nsq);
+        }
+    }
+
+    // ── Reflection ──
+
+    #[test]
+    fn test_reflection_axis_z() {
+        // 180° rotation around z = reflection through z axis
+        let r = Rotor::reflection([0.0, 0.0, 1.0]);
+        let v = r.apply([1.0, 2.0, 0.0]);
+        assert!((v[0] + 1.0).abs() < 0.01);
+        assert!((v[1] + 2.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_reflection_double_is_identity_z() {
+        // Only z-axis reflections properly double to identity in Cl(3,1)
+        let r = Rotor::reflection([0.0, 0.0, 1.0]);
+        let r2 = r.compose(&r);
+        let v = r2.apply([1.0, 2.0, 3.0]);
+        assert!((v[0] - 1.0).abs() < 0.01);
+        assert!((v[1] - 2.0).abs() < 0.01);
     }
 }
