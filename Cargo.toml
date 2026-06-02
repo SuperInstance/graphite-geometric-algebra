@@ -1,0 +1,34 @@
+[package]
+name = "graphite-ga-nodes"
+version = "0.1.0"
+edition = "2021"
+description = "Geometric algebra nodes for the Graphite editor — rotors, conformal embedding, reflections, and projections using Cl(3,1) conformal geometric algebra"
+authors = ["Graphite Authors <contact@graphite.art>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/SuperInstance/graphite-geometric-algebra"
+
+[dependencies]
+ga-core = { git = "https://github.com/SuperInstance/ga-core" }
+glam = { version = "0.28", features = ["f64"] }
+serde = { version = "1", features = ["derive"], optional = true }
+
+[features]
+default = ["serde"]
+
+[dev-dependencies]
+
+# Notes for integrating into Graphite:
+# When dropping this crate into Graphite's node-graph/nodes/ directory,
+# replace the [dependencies] section with:
+#
+# [dependencies]
+# core-types = { workspace = true }
+# vector-types = { workspace = true }
+# graphic-types = { workspace = true }
+# node-macro = { workspace = true }
+# glam = { workspace = true }
+# serde = { workspace = true, optional = true }
+# ga-core = { git = "https://github.com/SuperInstance/ga-core" }
+#
+# The node definitions in src/ga_nodes.rs use the #[node_macro::node] proc-macro
+# provided by Graphite's node-macro crate for registering nodes in the editor graph.
